@@ -72,10 +72,11 @@ package org.amqp
 
           accumulator = null;
 
-          if (input.bytesAvailable > 0) {
-            var frameEndMarker:int = input.readUnsignedByte();
+          if (input.bytesAvailable == 0) {
+              return false;
           }
 
+            var frameEndMarker:int = input.readUnsignedByte();
           if (frameEndMarker != AMQP.FRAME_END) {
             throw new MalformedFrameError("Bad frame end marker: " + frameEndMarker);
           }
