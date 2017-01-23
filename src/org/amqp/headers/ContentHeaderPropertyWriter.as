@@ -212,7 +212,8 @@ package org.amqp.headers
         }
 
         public function _writeTimestamp(x:Date):void {
-            outBytes.writeInt(x.time / 1000);
+            // AMQP uses POSIX time_t which is in seconds since the epoch began
+            outBytes.writeDouble(x.time / 1000);
         }
     }
 }
