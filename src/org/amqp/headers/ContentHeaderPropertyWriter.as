@@ -38,7 +38,7 @@ package org.amqp.headers
         public var bitCount:int;
 
         public function ContentHeaderPropertyWriter(){
-            this.flags = new Array();
+            this.flags = [];
             this.outBytes = new ByteArray();
             this.flagWord = 0;
             this.bitCount = 0;
@@ -51,7 +51,7 @@ package org.amqp.headers
          */
         public function argPresent(value:Object):Boolean {
             if (bitCount == 15) {
-                flags.addItem(flagWord | 1);
+                flags[flags.length] = flagWord | 1;
                 flagWord = 0;
                 bitCount = 0;
             }
