@@ -17,15 +17,17 @@
  **/
 package org.amqp
 {
-    import flash.utils.IDataInput;
-    import flash.utils.ByteArray;
-    import flash.utils.IDataOutput;
-    import org.amqp.headers.ContentHeader;
-    import org.amqp.methods.MethodArgumentWriter;
-    import org.amqp.headers.ContentHeaderReader;
-    import org.amqp.methods.MethodReader;
-    import org.amqp.error.UnexpectedFrameError;
     import de.polygonal.ds.Prioritizable;
+
+    import flash.utils.ByteArray;
+    import flash.utils.IDataInput;
+    import flash.utils.IDataOutput;
+
+    import org.amqp.error.UnexpectedFrameError;
+    import org.amqp.headers.ContentHeader;
+    import org.amqp.headers.ContentHeaderReader;
+    import org.amqp.methods.MethodArgumentWriter;
+    import org.amqp.methods.MethodReader;
 
     /**
      * EMPTY_CONTENT_BODY_FRAME_SIZE, 8 = 1 + 2 + 4 + 1
@@ -44,32 +46,35 @@ package org.amqp
         public static var EMPTY_CONTENT_BODY_FRAME_SIZE:int = 8;
         public static var EMPTY_BYTE_ARRAY:ByteArray = new ByteArray();
 
-        private var state:int;
+        private var _state:int;
+        private var _remainingBodyBytes:int;
         public var method:Method;
         public var contentHeader:ContentHeader;
-        private var remainingBodyBytes:int;
-        public  var content:ByteArray = new ByteArray;
+        public var content:ByteArray = new ByteArray;
 
         public function Command(m:Method = null,
                                 c:ContentHeader = null,
-                                b:ByteArray = null) {
+                                b:ByteArray = null)
+        {
             method = m;
             contentHeader = c;
             content = new ByteArray();
             addToContentBody(b);
-            state = (m == null) ? STATE_EXPECTING_METHOD : STATE_COMPLETE;
+            _state = (m == null) ? STATE_EXPECTING_METHOD : STATE_COMPLETE;
             priority = (m == null) ? -1 : (m.getClassId() * 100 + m.getMethodId() ) * -1;
-            remainingBodyBytes = 0;
+            _remainingBodyBytes = 0;
         }
 
-        public function isComplete():Boolean {
-            return this.state == STATE_COMPLETE;
+        public function isComplete():Boolean
+        {
+            return _state == STATE_COMPLETE;
         }
 
-        private function addToContentBody(b:ByteArray):void {
-            if (b != null) {
-                content.writeBytes(b,content.position,0);
-				
+        private function addToContentBody(b:ByteArray):void
+        {
+            if (b != null)
+            {
+                content.writeBytes(b, content.position, 0);
             }
         }
 
@@ -77,7 +82,8 @@ package org.amqp
          * Chops the content of this command into frames and dispatches
          * it to the underlying transport mechanism.
          **/
-        public function transmit(channelNumber:int, connection:Connection):void {
+        public function transmit(channelNumber:int, connection:Connection):void
+        {
 
             var f:Frame = new Frame();
             f.type = AMQP.FRAME_METHOD;
@@ -85,7 +91,8 @@ package org.amqp
 
             var bodyOut:IDataOutput = f.getOutputStream();
 
-            if (method.getClassId() < 0 || method.getMethodId() < 0) {
+            if (method.getClassId() < 0 || method.getMethodId() < 0)
+            {
                 throw new Error("Method not implemented properly" + method);
             }
 
@@ -96,7 +103,8 @@ package org.amqp
             argWriter.flush();
             connection.sendFrame(f);
 
-            if (this.method.hasContent()) {
+            if (this.method.hasContent())
+            {
 
                 f = new Frame();
                 f.type = AMQP.FRAME_HEADER;
@@ -108,9 +116,10 @@ package org.amqp
 
                 var frameMax:int = connection.frameMax;
                 var bodyPayloadMax:int =
-                    (frameMax == 0) ? this.content.length : frameMax - EMPTY_CONTENT_BODY_FRAME_SIZE;
+                        (frameMax == 0) ? this.content.length : frameMax - EMPTY_CONTENT_BODY_FRAME_SIZE;
 
-                for (var offset:int = 0; offset < this.content.length; offset += bodyPayloadMax) {
+                for (var offset:int = 0; offset < this.content.length; offset += bodyPayloadMax)
+                {
                     var remaining:int = this.content.length - offset;
 
                     f = new Frame();
@@ -118,66 +127,81 @@ package org.amqp
                     f.channel = channelNumber;
                     bodyOut = f.getOutputStream();
                     bodyOut.writeBytes(this.content, offset,
-                                  (remaining < bodyPayloadMax) ? remaining : bodyPayloadMax);
+                            (remaining < bodyPayloadMax) ? remaining : bodyPayloadMax);
                     connection.sendFrame(f);
                 }
             }
         }
 
-        public function handleFrame(frame:Frame):void {
-            switch (this.state) {
-              case STATE_EXPECTING_METHOD:
-                  switch (frame.type) {
-                    case AMQP.FRAME_METHOD: {
-                        this.method = MethodReader.readMethodFrom(frame.getInputStream());
-                        this.state = this.method.hasContent()
-                            ? STATE_EXPECTING_CONTENT_HEADER
-                            : STATE_COMPLETE;
-                        return;
-                    }
-                    default: {
-                        throw new UnexpectedFrameError("State: STATE_EXPECTING_METHOD", frame);
-                    }
-                  }
+        public function handleFrame(frame:Frame):Boolean
+        {
+            switch (_state)
+            {
+                case STATE_EXPECTING_METHOD:
+                    consumeMethodFrame(frame);
+                    break;
 
-              case STATE_EXPECTING_CONTENT_HEADER:
-                  switch (frame.type) {
-                    case AMQP.FRAME_HEADER: {
-                        var input:IDataInput = frame.getInputStream();
-                        this.contentHeader = ContentHeaderReader.readContentHeaderFrom(input);
-                        this.remainingBodyBytes = this.contentHeader.readFrom(input);
-                        updateContentBodyState();
-                        return;
-                    }
-                    default: throw new Error("Unexpected frame");
-                  }
+                case STATE_EXPECTING_CONTENT_HEADER:
+                    consumeHeaderFrame(frame);
+                    break;
 
-              case STATE_EXPECTING_CONTENT_BODY:
-                  switch (frame.type) {
-                    case AMQP.FRAME_BODY: {
+                case STATE_EXPECTING_CONTENT_BODY:
+                    consumeBodyFrame(frame);
+                    break;
 
-                        var fragment:ByteArray = frame.getPayload();
-                        this.remainingBodyBytes -= fragment.length;
-                        updateContentBodyState();
-                        if (this.remainingBodyBytes < 0) {
-                            throw new Error("%%%%%% FIXME unimplemented");
-                        }
-                        addToContentBody(fragment);
-                        return;
-                    }
-                    default: throw new Error("Unexpected frame");
-                  }
-
-              default:
-                  throw new Error("Bad Command State " + this.state);
+                default:
+                    throw new Error("Bad Command State " + _state);
             }
-
+            return isComplete();
         }
 
-        public function updateContentBodyState():void {
-            this.state = (this.remainingBodyBytes > 0)
-                ? STATE_EXPECTING_CONTENT_BODY
-                : STATE_COMPLETE;
+        private function consumeMethodFrame(frame:Frame):void
+        {
+            if (frame.type == AMQP.FRAME_METHOD)
+            {
+                this.method = MethodReader.readMethodFrom(frame.getInputStream());
+                _state = this.method.hasContent() ? STATE_EXPECTING_CONTENT_HEADER : STATE_COMPLETE;
+            } else
+            {
+                throw new UnexpectedFrameError("State: STATE_EXPECTING_METHOD", frame);
+            }
+        }
+
+        private function consumeHeaderFrame(frame:Frame):void
+        {
+            if (frame.type == AMQP.FRAME_HEADER)
+            {
+                var input:IDataInput = frame.getInputStream();
+                this.contentHeader = ContentHeaderReader.readContentHeaderFrom(input);
+                _remainingBodyBytes = this.contentHeader.readFrom(input);
+                updateContentBodyState();
+            } else
+            {
+                throw new Error("Unexpected frame");
+            }
+        }
+
+        private function consumeBodyFrame(frame:Frame):void
+        {
+            if (frame.type == AMQP.FRAME_BODY)
+            {
+                var fragment:ByteArray = frame.getPayload();
+                _remainingBodyBytes -= fragment.length;
+                updateContentBodyState();
+                if (_remainingBodyBytes < 0)
+                {
+                    throw new Error("%%%%%% FIXME unimplemented");
+                }
+                addToContentBody(fragment);
+            } else
+            {
+                throw new Error("Unexpected frame");
+            }
+        }
+
+        public function updateContentBodyState():void
+        {
+            _state = (_remainingBodyBytes > 0) ? STATE_EXPECTING_CONTENT_BODY : STATE_COMPLETE;
         }
     }
 }

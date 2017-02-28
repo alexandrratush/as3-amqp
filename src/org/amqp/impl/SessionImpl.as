@@ -18,7 +18,6 @@
 package org.amqp.impl
 {
     import de.polygonal.ds.ArrayedQueue;
-    import de.polygonal.ds.PriorityQueue;
 
     import flash.events.EventDispatcher;
 
@@ -37,7 +36,7 @@ package org.amqp.impl
         private var connection:Connection;
         private var channel:int;
         private var commandReceiver:CommandReceiver;
-        private var currentCommand:Command;
+        private var currentCommand:Command = new Command();
 
         private var dispatcher:EventDispatcher = new EventDispatcher();
 
@@ -45,87 +44,103 @@ package org.amqp.impl
 
         private var lifecycleHandlers:Array = new Array();
 
-        public function SessionImpl(con:Connection, ch:int, receiver:CommandReceiver) {
+        public function SessionImpl(con:Connection, ch:int, receiver:CommandReceiver)
+        {
             connection = con;
             channel = ch;
             commandReceiver = receiver;
         }
 
-        public function handleFrame(frame:Frame):void {
-            if (currentCommand == null) {
-                currentCommand = new Command();
-            }
-            currentCommand.handleFrame(frame);
-            if (currentCommand.isComplete()) {
+        public function handleFrame(frame:Frame):void
+        {
+            var command:Command = currentCommand;
+            if (command.handleFrame(frame))
+            {
                 /**
-                * The idea is that this callback will always be invoked when a command is
-                * to be processed by the session handler, so it can kick off the dequeuing
-                * of any pending RPCs in addition to dispatching to the target callback handler,
-                * which is implemented in the super class.
-                */
-                commandReceiver.receive(currentCommand);
-                if (currentCommand.method.isBottomHalf()) {
+                 * The idea is that this callback will always be invoked when a command is
+                 * to be processed by the session handler, so it can kick off the dequeuing
+                 * of any pending RPCs in addition to dispatching to the target callback handler,
+                 * which is implemented in the super class.
+                 */
+                currentCommand = new Command(); // prepare for the next one
+                commandReceiver.receive(command);
+                if (command.method.isBottomHalf())
+                {
                     rpcBottomHalf();
                 }
-                currentCommand = new Command();
             }
         }
 
-        public function registerLifecycleHandler(handler:LifecycleEventHandler):void {
+        public function registerLifecycleHandler(handler:LifecycleEventHandler):void
+        {
             lifecycleHandlers.push(handler);
         }
 
-        public function emitLifecyleEvent():void {
-            for (var i:uint = 0; i < lifecycleHandlers.length; i++) {
+        public function emitLifecyleEvent():void
+        {
+            for (var i:uint = 0; i < lifecycleHandlers.length; i++)
+            {
                 (lifecycleHandlers[i] as LifecycleEventHandler).afterOpen();
             }
         }
 
         /**
-        * The logic behind this is that a non-null fun signifies an RPC,
-        * if the fun is null, then it is an asynchronous command.
-        */
-        public function sendCommand(cmd:Command, fun:Function = null):void {
+         * The logic behind this is that a non-null fun signifies an RPC,
+         * if the fun is null, then it is an asynchronous command.
+         */
+        public function sendCommand(cmd:Command, fun:Function = null):void
+        {
 
-            if (null != fun) {
-                if (rpcQueue.isEmpty()) {
+            if (null != fun)
+            {
+                if (rpcQueue.isEmpty())
+                {
                     send(cmd);
                 }
-                rpcQueue.enqueue({command:cmd,callback:fun});
+                rpcQueue.enqueue({command: cmd, callback: fun});
             }
-            else {
+            else
+            {
                 send(cmd);
             }
         }
 
-        private function send(cmd:Command):void {
+        private function send(cmd:Command):void
+        {
             cmd.transmit(channel, connection);
         }
 
-        public function rpc(cmd:Command, fun:Function):void {
+        public function rpc(cmd:Command, fun:Function):void
+        {
             var method:Method = cmd.method;
             commandReceiver.addEventListener(method.getResponse(), fun);
-            if (null != method.getAltResponse()) {
+            if (null != method.getAltResponse())
+            {
                 commandReceiver.addEventListener(method.getAltResponse(), fun);
             }
             sendCommand(cmd, fun);
         }
 
-        private function rpcBottomHalf():void {
-            if (!rpcQueue.isEmpty()) {
+        private function rpcBottomHalf():void
+        {
+            if (!rpcQueue.isEmpty())
+            {
                 rpcQueue.dequeue();
-                if (!rpcQueue.isEmpty()) {
+                if (!rpcQueue.isEmpty())
+                {
                     var o:Object = rpcQueue.peek();
                     send(o.command);
                 }
             }
         }
 
-        public function closeGracefully():void {
+        public function closeGracefully():void
+        {
             commandReceiver.closeGracefully();
         }
 
-        public function forceClose():void {
+        public function forceClose():void
+        {
             commandReceiver.forceClose();
         }
 
