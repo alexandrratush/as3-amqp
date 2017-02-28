@@ -18,48 +18,63 @@
 package org.amqp
 {
     import com.ericfeminella.utils.Map;
+
     import org.amqp.error.IllegalArgumentError;
 
     public class FrameHelper
     {
-         public static function shortStrSize(str:String):int{
+        public static function shortStrSize(str:String):int
+        {
             return str.length + 1;
         }
 
         /** Computes the AMQP wire-protocol length of a protocol-encoded long string. */
-        public static function longStrSize(str:String):int {
+        public static function longStrSize(str:String):int
+        {
             return str.length + 4;
         }
 
-        public static function tableSize(table:Map):int{
+        public static function tableSize(table:Map):int
+        {
             var acc:int = 0;
+            for (var key:String in table)
+            {
+                acc += shortStrSize(key);
+                acc += fieldValueSize(table.getValue(key));
+            }
+            return acc;
+        }
 
-            for (var key:String in table) {
-                   acc += shortStrSize(key);
-                   acc++;
-                   var value:Object = table.getValue(key);
-
-                   if(value is String) {
-                    acc += longStrSize(value as String);
-                }
-                else if(value is LongString) {
-                    acc += 4;
-                    var optimizeMe:int = (value as LongString).length();
-                    acc += optimizeMe;
-                }
-                else if(value is int) {
-                    acc += 4;
-                }
-                else if(value is Date) {
-                    acc += 8;
-                }
-                else if(value is Map) {
-                    acc += 4;
-                    acc += tableSize(value as Map);
-                }
-                else {
-                    throw new IllegalArgumentError("invalid value in table");
-                }
+        private static function fieldValueSize(value:Object):int
+        {
+            var acc:int = 1;    // for the type tag
+            if (value is String)
+            {
+                acc += longStrSize(value as String);
+            } else if (value is LongString)
+            {
+                acc += 4;
+                var optimizeMe:int = (value as LongString).length();
+                acc += optimizeMe;
+            } else if (value is int)
+            {
+                acc += 4;
+            } else if (value is Date)
+            {
+                acc += 8;
+            } else if (value is Map)
+            {
+                acc += 4;
+                acc += tableSize(value as Map);
+            } else if (value is Boolean)
+            {
+                acc += 1;
+            } else if (value == null)
+            {
+                // empty
+            } else
+            {
+                throw new IllegalArgumentError("Invalid value in table: [" + value + "]");
             }
             return acc;
         }

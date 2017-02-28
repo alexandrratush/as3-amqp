@@ -18,19 +18,15 @@
 package org.amqp.methods
 {
     import com.ericfeminella.utils.Map;
-    
-    import flash.utils.ByteArray;
+
     import flash.utils.IDataOutput;
-    
-    import org.amqp.FrameHelper;
+
     import org.amqp.LongString;
-    import org.amqp.error.IllegalArgumentError;
-    import org.amqp.util.IOUtils;
-    import org.amqp.util.LongStringHelper;
+    import org.amqp.impl.ValueWriter;
 
     public class MethodArgumentWriter
     {
-        private var output:IDataOutput;
+        private var _out:ValueWriter;
 
         private var needBitFlush:Boolean;
         /** The current group of bits */
@@ -38,12 +34,14 @@ package org.amqp.methods
         /** The current position within the group of bits */
         private var bitMask:int;
 
-        public function MethodArgumentWriter(output:IDataOutput) {
-            this.output = output;
+        public function MethodArgumentWriter(output:IDataOutput)
+        {
+            _out = new ValueWriter(output);
             resetBitAccumulator();
         }
 
-        private function resetBitAccumulator(): void {
+        private function resetBitAccumulator():void
+        {
             needBitFlush = false;
             bitAccumulator = 0;
             bitMask = 1;
@@ -53,61 +51,69 @@ package org.amqp.methods
          * Private API - called when we may be transitioning from encoding
          * a group of bits to encoding a non-bit value.
          */
-        private final function bitflush():void {
-            if (needBitFlush) {
-                output.writeByte(bitAccumulator);
+        private final function bitflush():void
+        {
+            if (needBitFlush)
+            {
+                _out.writeOctet(bitAccumulator);
                 resetBitAccumulator();
             }
         }
 
         /** Public API - encodes a short string argument. */
-        public final function writeShortstr(str:String):void {
+        public final function writeShortstr(str:String):void
+        {
             bitflush();
-            var buf:ByteArray = new ByteArray();
-            buf.writeUTFBytes(str);
-            output.writeByte(buf.length);
-            output.writeBytes(buf, 0, 0);
+            _out.writeShortStr(str);
         }
 
         /** Public API - encodes a long string argument from a LongString. */
-        public final function writeLongstr(str:LongString):void {
+        public final function writeLongstr(str:LongString):void
+        {
             bitflush();
-            writeLong(str.length());
-            IOUtils.copy(str.getBytes(), output);
+            _out.writeLongStr(str);
         }
 
         /** Public API - encodes a long string argument from a String. */
-        public final function writeString(str:String):void {
+        public final function writeString(str:String):void
+        {
             bitflush();
-            writeLong(str.length);
-            output.writeUTFBytes(str);
+            _out.writeString(str);
         }
 
         /** Public API - encodes a short integer argument. */
-        public final function writeShort(s:int):void {
+        public final function writeShort(s:int):void
+        {
             bitflush();
-            output.writeShort(s);
+            _out.writeShort(s);
         }
 
         /** Public API - encodes an integer argument. */
-        public final function writeLong(l:int):void {
+        public final function writeLong(long:int):void
+        {
             bitflush();
-            output.writeInt(l);
+            _out.writeLong(long);
         }
 
         /** Public API - encodes a long integer argument. */
-        public final function writeLonglong(ll:int):void {
-            throw new Error("No longs in Actionscript");
+        public final function writeLonglong(ll:Number):void
+        {
+            bitflush();
+            _out.writeLonglong(ll);
         }
 
         /** Public API - encodes a boolean/bit argument. */
-        public function writeBit(b:Boolean):void {
-            if (bitMask > 0x80) {
+        public function writeBit(b:Boolean):void
+        {
+            if (bitMask > 0x80)
+            {
                 bitflush();
             }
-            if (b) {
+            if (b)
+            {
                 bitAccumulator |= bitMask;
-            } else {
+            } else
+            {
                 // um, don't set the bit.
             }
 
@@ -116,77 +122,32 @@ package org.amqp.methods
         }
 
         /** Public API - encodes a table argument. */
-        public final function writeTable(table:Map):void {
+        public final function writeTable(table:Map):void
+        {
             bitflush();
-            if (table == null) {
-                output.writeInt(0);
-            } else {
-                output.writeInt( FrameHelper.tableSize(table) );
-
-                for (var key:String in table) {
-                    writeShortstr(key);
-                    var value:Object = table.getValue(key);
-                    if(value is String) {
-                        writeOctet(83); // 'S'
-                        writeString(value as String);
-                    }
-                    else if(value is LongString) {
-                        writeOctet(83); // 'S'
-                        writeLongstr(value as LongString);
-                    }
-					else if (value is Boolean) {
-						writeOctet(116);//'t'
-						output.writeBoolean(value);
-					}	
-                    else if(value is int) {
-                        writeOctet(73); // 'I'
-                        writeShort(value as int);
-                    }
-					else if(value is Number) {
-						writeOctet(100);//'d'
-						output.writeDouble(value as Number);
-					}
-                    else if(value is Date) {
-                        writeOctet(84);//'T'
-                        writeTimestamp(value as Date);
-                    }
-                    else if(value is Map) {
-                        writeOctet(70); // 'F"
-                        writeTable(value as Map);
-                    }
-                    else if (value == null) {
-						//corresponding 'read' is 'V' :
-						writeOctet(86);
-                     //   throw new Error("Value for key {" + key + "} was null");
-                    }
-                    else {
-                        throw new IllegalArgumentError
-                            ("Invalid value type: [" + value
-                             + "] for key [" + key+"]");
-                    }
-                }
-            }
-
+            _out.writeTable(table);
         }
-				
-		
+
+
         /** Public API - encodes an octet argument from an int. */
-        public final function writeOctet(octet:int):void {
+        public final function writeOctet(octet:int):void
+        {
             bitflush();
-            output.writeByte(octet);
+            _out.writeOctet(octet);
         }
 
         /** Public API - encodes a timestamp argument. */
-        public final function writeTimestamp(timestamp:Date):void {
-			
-            writeLonglong( timestamp.valueOf() / 1000);
+        public final function writeTimestamp(timestamp:Date):void
+        {
+            _out.writeTimestamp(timestamp);
         }
 
         /**
          * Public API - call this to ensure all accumulated argument
          * values are correctly written to the output stream.
          */
-        public function flush():void {
+        public function flush():void
+        {
             bitflush();
         }
     }

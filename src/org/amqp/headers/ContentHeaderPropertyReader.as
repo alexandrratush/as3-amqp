@@ -22,32 +22,35 @@ package org.amqp.headers
     import flash.utils.IDataInput;
 
     import org.amqp.LongString;
-    import org.amqp.methods.MethodArgumentReader;
+    import org.amqp.impl.ValueReader;
 
     public class ContentHeaderPropertyReader
     {
-        private var input:IDataInput;
+        private var _in:ValueReader;
         /** Collected field flags */
         public var flags:Array;
         /** Position in argument stream */
         private var argumentIndex:int;
 
-        public function ContentHeaderPropertyReader(input:IDataInput){
-            this.input = input;
+        public function ContentHeaderPropertyReader(input:IDataInput)
+        {
+            _in = new ValueReader(input);
             readFlags();
             this.argumentIndex = 0;
         }
 
         /**
-        * Private API - reads the initial absence/presence flags from the
-        * input stream
-        */
-        public function readFlags():void {
-            var acc:Array = new Array();
+         * Private API - reads the initial absence/presence flags from the
+         * input stream
+         */
+        public function readFlags():void
+        {
+            var acc:Array = [];
             do {
-                var flagsWord:int = input.readShort();
+                var flagsWord:int = _in.readShort();
                 acc.push(flagsWord);
-                if ((flagsWord & 1) == 0) {
+                if ((flagsWord & 1) == 0)
+                {
                     break;
                 }
             } while (true);
@@ -59,7 +62,8 @@ package org.amqp.headers
          * current position is to be expected to be present in the main
          * data stream.
          */
-        private function argPresent():Boolean {
+        private function argPresent():Boolean
+        {
             var word:int = argumentIndex / 15;
             var bit:int = 15 - (argumentIndex % 15);
             argumentIndex++;
@@ -67,56 +71,65 @@ package org.amqp.headers
         }
 
         /** Reads and returns an AMQP short string content header field, or null if absent. */
-        public function readShortstr():String{
+        public function readShortstr():String
+        {
             if (!argPresent()) return null;
-            return MethodArgumentReader._readShortstr(input);
+            return _in.readShortStr();
         }
 
         /** Reads and returns an AMQP "long string" (binary) content header field, or null if absent. */
-        public function readLongstr():LongString {
+        public function readLongstr():LongString
+        {
             if (!argPresent()) return null;
-            return MethodArgumentReader._readLongstr(input);
+            return _in.readLongStr();
         }
 
         /** Reads and returns an AMQP short integer content header field, or null if absent. */
-        public function readShort():int{
+        public function readShort():int
+        {
             if (!argPresent()) return 0;
-            return input.readUnsignedShort();
+            return _in.readShort();
         }
 
         /** Reads and returns an AMQP integer content header field, or null if absent. */
-        public function readLong():int{
+        public function readLong():int
+        {
             if (!argPresent()) return 0;
-            return input.readInt();
+            return _in.readLong();
         }
 
         /** Reads and returns an AMQP long integer content header field, or null if absent. */
-        public function readLonglong():uint {
+        public function readLonglong():uint
+        {
             if (!argPresent()) return null;
-            return input.readUnsignedInt();
+            return _in.readLongLong();
         }
 
         /** Reads and returns an AMQP bit content header field. */
-        public function readBit():Boolean{
+        public function readBit():Boolean
+        {
             return argPresent();
         }
 
         /** Reads and returns an AMQP table content header field, or null if absent. */
-        public function readTable():Map{
+        public function readTable():Map
+        {
             if (!argPresent()) return null;
-            return MethodArgumentReader._readTable(input);
+            return _in.readTable();
         }
 
         /** Reads and returns an AMQP octet content header field, or null if absent. */
-        public function readOctet():int{
+        public function readOctet():int
+        {
             if (!argPresent()) return 0;
-            return input.readUnsignedByte();
+            return _in.readOctet();
         }
 
         /** Reads and returns an AMQP timestamp content header field, or null if absent. */
-        public function readTimestamp():Date {
+        public function readTimestamp():Date
+        {
             if (!argPresent()) return null;
-            return MethodArgumentReader._readTimestamp(input);
+            return _in.readTimestamp();
         }
     }
 }
