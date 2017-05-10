@@ -74,7 +74,7 @@ package org.amqp
         {
             if (b != null)
             {
-                content.writeBytes(b, content.position, 0);
+                content.writeBytes(b);
             }
         }
 
